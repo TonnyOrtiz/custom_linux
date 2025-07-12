@@ -87,25 +87,6 @@ Este es el paso que resuelve el error `Cannot ioctl TUNSETIFF tun: Operation not
       * **Nombre:** Dale un nombre descriptivo a tu conexión (ej., "VPN ECCI").
       * **Archivo de configuración (.ovpn):** Si tienes un archivo `.ovpn` completo, puedes importarlo aquí. NetworkManager intentará rellenar la mayoría de los campos. Si no, introduce los detalles manualmente.
 
-4.  **Configura la identidad (certificados y claves):**
-
-      * Ve a la pestaña **"Identidad" (Identity)**.
-      * **Certificado de CA (CA Certificate):** Haz clic en el icono de la carpeta y navega hasta `~/.config/openvpn/ecci-ca.crt`.
-      * **Certificado de usuario (User Certificate):** Haz clic en el icono de la carpeta y navega hasta `~/.config/openvpn/ecci.crt`.
-      * **Clave privada (Private Key):** Haz clic en el icono de la carpeta y navega hasta `~/.config/openvpn/ecci.key`.
-      * Ingresa tu **nombre de usuario y contraseña** para la autenticación de usuario si es requerida.
-
-5.  **Configura las opciones TLS (si usas `tls-auth`):**
-
-      * Haz clic en el botón **"Avanzado..." (Advanced...)**.
-      * Ve a la pestaña **"Configuración TLS" (TLS Settings)**.
-      * **Modo TLS (TLS Mode):** Selecciona **"Autenticación TLS" (TLS authentication)**.
-      * **Clave de autenticación TLS (TLS authentication key):** Haz clic en el icono de la carpeta y navega hasta `~/.config/openvpn/ecci-ta.key` (si tienes este archivo).
-      * **Dirección de clave (Key direction):** Si tu archivo `.ovpn` tenía `tls-auth ecci-ta.key 1`, selecciona **"1 (Response)"**. Si era `tls-auth ecci-ta.key 0`, selecciona "0 (Client)".
-
-6.  **Guarda la configuración:**
-    Haz clic en **"Aceptar" (OK)** en la ventana de configuración avanzada, y luego en **"Aplicar" (Apply)** o **"Guardar" (Save)** en la ventana principal de la VPN.
-
 -----
 
 ### **Paso 4: Gestionar Políticas de SELinux (Si Es Necesario)**
@@ -118,42 +99,56 @@ Aunque los pasos anteriores deberían cubrir lo básico, a veces SELinux en Fedo
     sudo dnf install setroubleshoot-server policycoreutils-python-utils -y
     ```
 
-2.  **Limpia el log de auditoría para una captura fresca:**
+2.  **Intentar un reinicio forzado o instalación completa**
 
     ```bash
-    sudo truncate -s 0 /var/log/audit/audit.log
+    sudo dnf reinstall setroubleshoot-server setroubleshoot -y
+    sudo systemctl daemon-reload
+    sudo systemctl restart setroubleshootd
+    sudo systemctl status setroubleshootd
     ```
 
-3.  **Asegúrate de que SELinux está en modo `enforcing`:**
+3.  **Asegúrate de que auditd (el demonio de auditoría) esté corriendo:**
 
     ```bash
-    sudo setenforce 1
+    sudo systemctl status auditd
+    #Debería decir active (running). Si no, sudo systemctl start auditd.
     ```
 
-4.  **Intenta conectar la VPN desde GNOME Settings:**
+4. **Limpia los logs de auditoría para una captura fresca:**
+
+```bash
+sudo systemctl stop auditd
+sudo rm -f /var/log/audit/audit.log*
+sudo systemctl start auditd
+```
+
+5.  **Intenta conectar la VPN desde GNOME Settings:**
     Déjala fallar para que las denegaciones se registren.
 
-5.  **Genera la política SELinux a partir de las denegaciones:**
+6.  **Genera la política SELinux a partir de las denegaciones:**
 
     ```bash
-    sudo cat /var/log/audit/audit.log | grep "AVC denied" | audit2allow -M myvpn_policy_name
+
+    sudo cat /var/log/audit/audit.log | grep AVC | tail -n 20
+
+    sudo cat /var/log/audit/audit.log | audit2allow -M myvpn_final
     ```
 
-    Reemplaza `myvpn_policy_name` con un nombre único para tu política (ej., `ecci_vpn_policy`).
 
-6.  **Carga la nueva política SELinux:**
+7.  **Carga la nueva política SELinux:**
 
     ```bash
-    sudo semodule -i myvpn_policy_name.pp
+    sudo semodule -i myvpn_final.pp
     ```
 
-7.  **Reinicia NetworkManager:**
+8.  **Reinicia NetworkManager:**
 
     ```bash
     sudo systemctl restart NetworkManager
     ```
 
-8.  **Intenta conectar la VPN de nuevo.**
+9.  **Intenta conectar la VPN de nuevo.**
 
 -----
 
